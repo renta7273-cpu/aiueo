@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Universal Image ⇄ HEX (Lossless)</title>
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+</head>
+<body>
+
+<h2>Universal Image ⇄ HEX (Lossless / Full Color)</h2>
+
+<input type="file" id="upload">
+<button onclick="encode()">Encode → HEX</button>
+
+<br><br>
+
+<textarea id="hexOutput" rows="10" cols="80" placeholder="HEX data"></textarea>
+
+<br><br>
+
+<button onclick="decode()">HEX → PNG</button>
+
+<hr>
+<canvas id="canvas"></canvas>
+
+<script>
+
+function encode(){
+    const file = document.getElementById("upload").files[0];
+    const reader = new FileReader();
+
+    reader.onload = function(e){
+        const img = new Image();
+        img.onload = function(){
+
+            const canvas = document.getElementById("canvas");
+            const ctx = canvas.getContext("2d");
+
+            canvas.width = img.width;
+            canvas.height = img.height;
+
+            ctx.drawImage(img,0,0);
+
+            const imageData = ctx.getImageData(0,0,img.width,img.height).data;
+
+            let raw = [];
+
+            // width & height (4byte little endian)
+            for(let i=0;i<4;i++) raw.push((img.width >> (i*8)) & 255);
+            for(let i=0;i<4;i++) raw.push((img.height >> (i*8)) & 255);
+
+            // RGB only (ignore alpha)
+            for(let i=0;i<imageData.length;i+=4){
+                raw.push(imageData[i]);
+                raw.push(imageData[i+1]);
+                raw.push(imageData[i+2]);
+            }
+
+            let compressed = pako.deflate(new Uint8Array(raw), {level:9});
+            let hex = Array.from(compressed)
+                .map(b => b.toString(16).padStart(2,"0"))
+                .join("");
+
+            document.getElementById("hexOutput").value = hex;
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function decode(){
+    const hex = document.getElementById("hexOutput").value.trim();
+    const compressed = new Uint8Array(hex.match(/.{1,2}/g).map(b=>parseInt(b,16)));
+    const raw = pako.inflate(compressed);
+
+    let width = 0;
+    let height = 0;
+
+    for(let i=0;i<4;i++) width |= raw[i] << (i*8);
+    for(let i=0;i<4;i++) height |= raw[i+4] << (i*8);
+
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    canvas.width = width;
+    canvas.height = height;
+
+    const imgData = ctx.createImageData(width,height);
+
+    let ptr = 8;
+    for(let i=0;i<width*height;i++){
+        imgData.data[i*4]   = raw[ptr++];
+        imgData.data[i*4+1] = raw[ptr++];
+        imgData.data[i*4+2] = raw[ptr++];
+        imgData.data[i*4+3] = 255;
+    }
+
+    ctx.putImageData(imgData,0,0);
+
+    // auto download
+    const link = document.createElement("a");
+    link.download = "decoded.png";
+    link.href = canvas.toDataURL();
+    link.click();
+}
+
+</script>
+</body>
+</html>
